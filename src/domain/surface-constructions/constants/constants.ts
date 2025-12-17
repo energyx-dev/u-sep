@@ -1,0 +1,1 @@
+export const SURFACE_LAYERS_COLUMN_COUNT = 8;

@@ -1,0 +1,7 @@
+.container-page {
+  @apply mx-auto w-[996px] px-10 py-20;
+}
+
+.text-error {
+  @apply text-destructive text-[13px];
+}

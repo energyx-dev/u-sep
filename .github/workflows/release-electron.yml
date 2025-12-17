@@ -1,0 +1,86 @@
+name: Release Electron App
+
+on:
+  push:
+    tags:
+      - "[0-9]+\\.[0-9]+\\.[0-9]+-electron"
+
+jobs:
+  build_and_release:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [windows-latest]
+        node-version: [20.18.0]
+
+    steps:
+      # 1. 코드 체크아웃
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      # 2. pnpm 설치
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      # 3. Node.js 설치
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+
+      # 4. node_modules 캐시 복원
+      - name: Restore node_modules cache
+        id: cache
+        uses: actions/cache@v3
+        with:
+          path: node_modules
+          key: ${{ matrix.os }}-build-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ matrix.os }}-build-
+
+      # 5. 의존성 설치 (캐시 미히트 시)
+      - name: Install dependencies
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: pnpm install
+
+      # 6. OS별 빌드 & 패키징
+      - name: Build & Package (Windows)
+        if: matrix.os == 'windows-latest'
+        env:
+          CI: false
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: pnpm run electron-pack:win
+
+      # 7. 플랫폼별 설치 파일만 묶기
+      - name: Archive Windows Installer
+        if: matrix.os == 'windows-latest'
+        run: Compress-Archive -Path dist\*.exe -DestinationPath U-SEP-${{ github.ref_name }}-win.zip
+        shell: pwsh
+
+      # 8. 마지막 release 라벨 PR 본문 추출
+      # NOTE:
+      # - 릴리즈 대상 PR에는 반드시 'release' 라벨이 필요합니다.
+      # - 가장 최근에 머지된 release PR의 본문을 Release Note로 사용합니다.
+      - name: Get last merged PR body
+        id: last_pr
+        shell: pwsh
+        run: |
+          $PR_NUMBER = gh pr list --state merged --label release --json number --jq '.[0].number'
+          $PR_BODY = gh pr view $PR_NUMBER --json body --jq '.body'
+          Set-Content -Path $env:GITHUB_OUTPUT -Value "pr_body<<EOF"
+          Add-Content -Path $env:GITHUB_OUTPUT -Value $PR_BODY
+          Add-Content -Path $env:GITHUB_OUTPUT -Value "EOF"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # 9. 현재 레포지토리에 릴리즈 생성
+      - name: Create Release and Upload
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ github.ref_name }}
+          files: U-SEP-${{ github.ref_name }}-win.zip
+          draft: false
+          generate_release_notes: false
+          body: ${{ steps.last_pr.outputs.pr_body }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

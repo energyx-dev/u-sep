@@ -1,0 +1,2 @@
+TEMPLATE_DIRNAME = "templates"
+COREMODULE_NAME  = "core"
